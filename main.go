@@ -1,7 +1,7 @@
 package main
 
 import (
-	"errors"
+	"encoding/json"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"net/http"
@@ -9,7 +9,9 @@ import (
 	"time"
 )
 
-func main() {
+var count int
+
+func main()  {
 	// Echo instance
 	e := echo.New()
 
@@ -19,8 +21,8 @@ func main() {
 
 	// Routes
 	e.Static("/", "static/index.html")
-	e.GET("/post/",post)
-	e.GET("/get/", get)
+	e.GET("/get/", getListPage )
+	e.GET("/post/", getPostPage )
 
 	// render your 404 page
 	echo.NotFoundHandler = func(c echo.Context) error {
@@ -31,44 +33,63 @@ func main() {
 	e.Logger.Fatal(e.Start(":1323"))
 }
 
-func checkDate(from,to string) (error, time.Time,time.Time) {
-	const layout  = "2006-01-02T15:04"
-	var err error
+func getListData(from,to time.Time,requiredSize int) string {
 
-	dateFrom, errFrom := time.Parse(layout,from)
-	dateTo, errTo := time.Parse(layout,to)
-	if errFrom != nil || errTo != nil {
-		err = errors.New("Invalid format date")
+	var users []jsonWrite
+	usersChan := make(chan jsonWrite)
+
+	count = 0
+
+	go func() {
+		for i := 0; i < requiredSize; i++ {
+			usersChan <- readData(from,to)
+		}
+	}()
+
+	for  {
+		users = append(users, <- usersChan )
+		if count >= requiredSize {
+		break
+		}
 	}
-	return err,dateFrom,dateTo
+
+	jitem, _ := json.Marshal( users )
+	return string(jitem)
 }
 
-func get(c echo.Context) error {
+
+func getListPage(c echo.Context) error {
 	sf := c.QueryParam("from")
 	st := c.QueryParam("to")
 	sCount := c.QueryParam("count")
 
-	errDate, from, to := checkDate(sf,st)
+	errDate, from, to := checkInputDate(sf,st)
+
 	count, errCount := strconv.Atoi(sCount)
 	if errDate != nil || errCount != nil || count <= 0 {
 		return c.String(http.StatusBadRequest, "Ошибка ввода")
 	} else {
-		return c.String(http.StatusOK,  getListUsers(from,to,count)  )
+		return c.String(http.StatusOK,	getListData(from,to,count))
 	}
 }
 
-func post(c echo.Context) error {
-	sf := c.FormValue("from")
-	st := c.FormValue("to")
+func getPostPage(c echo.Context) error {
+	strFrom := c.FormValue("from")
+	strTo := c.FormValue("to")
 	site := c.FormValue("site")
 
-	errDate,from,to := checkDate(sf,st)
+	errDate,from,to := checkInputDate(strFrom,strTo)
 	if errDate != nil {
 		return c.String(http.StatusBadRequest, "Ошибка ввода")
 	} else {
-		return c.String(http.StatusOK, writePost(from,to,site) )
+		return c.String(http.StatusOK, writePost(from,to,site) ) //
 	}
-
-
 }
+
+
+
+
+
+
+
 
